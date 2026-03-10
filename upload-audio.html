@@ -1,0 +1,338 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Upload Audio Files to Supabase</title>
+  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+  <style>
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, sans-serif;
+      max-width: 800px;
+      margin: 50px auto;
+      padding: 20px;
+      background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+      min-height: 100vh;
+    }
+    .container {
+      background: white;
+      padding: 40px;
+      border-radius: 16px;
+      box-shadow: 0 20px 60px rgba(0,0,0,0.3);
+    }
+    h1 {
+      color: #333;
+      margin-bottom: 30px;
+    }
+    .upload-area {
+      border: 3px dashed #ddd;
+      border-radius: 12px;
+      padding: 40px;
+      text-align: center;
+      margin: 20px 0;
+      transition: all 0.3s;
+      cursor: pointer;
+    }
+    .upload-area:hover {
+      border-color: #667eea;
+      background: #f8f9ff;
+    }
+    .upload-area.dragging {
+      border-color: #667eea;
+      background: #f0f4ff;
+    }
+    input[type="file"] {
+      display: none;
+    }
+    button {
+      background: #667eea;
+      color: white;
+      border: none;
+      padding: 12px 30px;
+      border-radius: 8px;
+      font-size: 16px;
+      font-weight: 600;
+      cursor: pointer;
+      transition: all 0.3s;
+    }
+    button:hover {
+      background: #5568d3;
+      transform: translateY(-2px);
+      box-shadow: 0 4px 12px rgba(102, 126, 234, 0.4);
+    }
+    button:disabled {
+      background: #ccc;
+      cursor: not-allowed;
+      transform: none;
+    }
+    .file-list {
+      margin: 20px 0;
+      padding: 20px;
+      background: #f8f9fa;
+      border-radius: 8px;
+    }
+    .file-item {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      padding: 12px;
+      margin: 8px 0;
+      background: white;
+      border-radius: 6px;
+      border: 1px solid #e0e0e0;
+    }
+    .status {
+      padding: 8px 16px;
+      border-radius: 20px;
+      font-size: 14px;
+      font-weight: 600;
+    }
+    .status.success {
+      background: #d4edda;
+      color: #155724;
+    }
+    .status.error {
+      background: #f8d7da;
+      color: #721c24;
+    }
+    .status.pending {
+      background: #fff3cd;
+      color: #856404;
+    }
+    .info {
+      background: #e7f3ff;
+      border-left: 4px solid #2196F3;
+      padding: 15px;
+      margin: 20px 0;
+      border-radius: 4px;
+    }
+    .login-section {
+      margin: 30px 0;
+      padding: 20px;
+      background: #f8f9fa;
+      border-radius: 8px;
+    }
+    .login-section input {
+      width: 100%;
+      padding: 12px;
+      margin: 8px 0;
+      border: 2px solid #ddd;
+      border-radius: 6px;
+      font-size: 14px;
+    }
+    .login-section input:focus {
+      outline: none;
+      border-color: #667eea;
+    }
+    .logged-in {
+      color: #155724;
+      background: #d4edda;
+      padding: 12px;
+      border-radius: 6px;
+      margin: 10px 0;
+    }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <h1>🎵 Upload Audio Files to Supabase Storage</h1>
+
+    <div class="info">
+      <strong>📋 Instructions:</strong>
+      <ol>
+        <li>First, log in with your Supabase account credentials</li>
+        <li>Select or drag & drop your MP3 files</li>
+        <li>Click "Upload All Files" to upload them to Supabase Storage</li>
+      </ol>
+    </div>
+
+    <div class="login-section" id="loginSection">
+      <h3>Login to Your Account</h3>
+      <input type="email" id="emailInput" placeholder="Your email" />
+      <input type="password" id="passwordInput" placeholder="Your password" />
+      <button onclick="login()" id="loginBtn">Login</button>
+    </div>
+
+    <div id="loggedInSection" style="display: none;">
+      <div class="logged-in" id="userInfo"></div>
+
+      <div class="upload-area" id="uploadArea" onclick="document.getElementById('fileInput').click()">
+        <p style="font-size: 48px; margin: 0;">📁</p>
+        <p style="color: #666; margin: 10px 0;">Click to select files or drag & drop MP3 files here</p>
+        <input type="file" id="fileInput" accept=".mp3,audio/mpeg" multiple onchange="handleFiles(this.files)">
+      </div>
+
+      <div id="fileList" class="file-list" style="display: none;"></div>
+
+      <button onclick="uploadAll()" id="uploadBtn" disabled>Upload All Files</button>
+      <button onclick="logout()" style="background: #dc3545; margin-left: 10px;">Logout</button>
+    </div>
+  </div>
+
+  <script>
+    const SUPABASE_URL = 'https://pklpbnunurxsbqpglrwb.supabase.co';
+    const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InBrbHBibnVudXJ4c2JxcGdscndiIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NjA3OTA5NDMsImV4cCI6MjA3NjM2Njk0M30.4VMtkd7Jho-HQt526npXMlNjilqg5nR7ZTV5rjP9T5o';
+
+    const supabase = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
+
+    let selectedFiles = [];
+    let currentUser = null;
+
+    async function checkSession() {
+      const { data: { session } } = await supabase.auth.getSession();
+      if (session) {
+        currentUser = session.user;
+        showLoggedIn();
+      }
+    }
+
+    async function login() {
+      const email = document.getElementById('emailInput').value;
+      const password = document.getElementById('passwordInput').value;
+      const loginBtn = document.getElementById('loginBtn');
+
+      if (!email || !password) {
+        alert('Please enter both email and password');
+        return;
+      }
+
+      loginBtn.disabled = true;
+      loginBtn.textContent = 'Logging in...';
+
+      try {
+        const { data, error } = await supabase.auth.signInWithPassword({
+          email: email,
+          password: password
+        });
+
+        if (error) throw error;
+
+        currentUser = data.user;
+        showLoggedIn();
+      } catch (error) {
+        alert('Login failed: ' + error.message);
+        loginBtn.disabled = false;
+        loginBtn.textContent = 'Login';
+      }
+    }
+
+    function showLoggedIn() {
+      document.getElementById('loginSection').style.display = 'none';
+      document.getElementById('loggedInSection').style.display = 'block';
+      document.getElementById('userInfo').textContent = `✓ Logged in as: ${currentUser.email}`;
+    }
+
+    async function logout() {
+      await supabase.auth.signOut();
+      currentUser = null;
+      document.getElementById('loginSection').style.display = 'block';
+      document.getElementById('loggedInSection').style.display = 'none';
+      document.getElementById('emailInput').value = '';
+      document.getElementById('passwordInput').value = '';
+      selectedFiles = [];
+      updateFileList();
+    }
+
+    const uploadArea = document.getElementById('uploadArea');
+
+    ['dragenter', 'dragover', 'dragleave', 'drop'].forEach(eventName => {
+      uploadArea?.addEventListener(eventName, preventDefaults, false);
+    });
+
+    function preventDefaults(e) {
+      e.preventDefault();
+      e.stopPropagation();
+    }
+
+    ['dragenter', 'dragover'].forEach(eventName => {
+      uploadArea?.addEventListener(eventName, () => {
+        uploadArea.classList.add('dragging');
+      });
+    });
+
+    ['dragleave', 'drop'].forEach(eventName => {
+      uploadArea?.addEventListener(eventName, () => {
+        uploadArea.classList.remove('dragging');
+      });
+    });
+
+    uploadArea?.addEventListener('drop', (e) => {
+      const files = e.dataTransfer.files;
+      handleFiles(files);
+    });
+
+    function handleFiles(files) {
+      selectedFiles = Array.from(files).filter(file =>
+        file.type === 'audio/mpeg' || file.name.endsWith('.mp3')
+      );
+      updateFileList();
+    }
+
+    function updateFileList() {
+      const fileList = document.getElementById('fileList');
+      const uploadBtn = document.getElementById('uploadBtn');
+
+      if (selectedFiles.length === 0) {
+        fileList.style.display = 'none';
+        uploadBtn.disabled = true;
+        return;
+      }
+
+      fileList.style.display = 'block';
+      uploadBtn.disabled = false;
+
+      fileList.innerHTML = '<h3>Selected Files:</h3>' + selectedFiles.map((file, index) => `
+        <div class="file-item" id="file-${index}">
+          <span>📄 ${file.name} (${(file.size / 1024 / 1024).toFixed(2)} MB)</span>
+          <span class="status pending" id="status-${index}">Pending</span>
+        </div>
+      `).join('');
+    }
+
+    async function uploadAll() {
+      if (!currentUser) {
+        alert('Please log in first');
+        return;
+      }
+
+      const uploadBtn = document.getElementById('uploadBtn');
+      uploadBtn.disabled = true;
+      uploadBtn.textContent = 'Uploading...';
+
+      for (let i = 0; i < selectedFiles.length; i++) {
+        const file = selectedFiles[i];
+        const statusEl = document.getElementById(`status-${i}`);
+
+        try {
+          statusEl.textContent = 'Uploading...';
+          statusEl.className = 'status pending';
+
+          const { data, error } = await supabase.storage
+            .from('listening-audio')
+            .upload(file.name, file, {
+              cacheControl: '3600',
+              upsert: true
+            });
+
+          if (error) throw error;
+
+          statusEl.textContent = '✓ Uploaded';
+          statusEl.className = 'status success';
+        } catch (error) {
+          console.error('Upload error:', error);
+          statusEl.textContent = `✗ Failed: ${error.message}`;
+          statusEl.className = 'status error';
+        }
+      }
+
+      uploadBtn.textContent = 'Upload Complete!';
+      setTimeout(() => {
+        uploadBtn.textContent = 'Upload All Files';
+        uploadBtn.disabled = false;
+      }, 2000);
+    }
+
+    checkSession();
+  </script>
+</body>
+</html>
